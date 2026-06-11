@@ -440,7 +440,15 @@ async function signIn() {
     currentAccount = result.account;
     updateAuthUI();
     loadLog();
-  } catch (e) { console.error('Sign-in error', e); }
+  } catch (e) {
+    console.error('Sign-in error', e);
+    let msg = e.message || String(e);
+    if (e.errorCode === 'popup_window_error') {
+      msg = 'Popup blocked by the browser — allow popups for this site (icon at the right end of the address bar), then try again.';
+    }
+    document.getElementById('userInfo').innerHTML =
+      `<span style="color:#c62828">Sign-in failed: ${msg.replace(/</g,'&lt;')}</span>`;
+  }
 }
 
 function signOut() {
