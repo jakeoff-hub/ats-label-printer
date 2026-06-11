@@ -411,29 +411,47 @@ let currentAccount = null;
 let siteId = null;
 let listId = null;
 
-if (configured) {
-  msalInstance = new msal.PublicClientApplication({
-    auth: {
-      clientId:    CONFIG.clientId,
-      authority:   `https://login.microsoftonline.com/${CONFIG.tenantId}`,
-      redirectUri: window.location.href.split('?')[0].split('#')[0],
-    },
-    cache: { cacheLocation: 'sessionStorage' },
-  });
+function showAuthError(msg) {
+  document.getElementById('userInfo').innerHTML =
+    `<span style="color:#c62828">${String(msg).replace(/</g,'&lt;')}</span>`;
+}
 
-  msalInstance.initialize().then(() => {
-    const accounts = msalInstance.getAllAccounts();
-    if (accounts.length > 0) {
-      currentAccount = accounts[0];
-      updateAuthUI();
-      loadLog();
+let msalReady = null;
+if (configured) {
+  if (typeof msal === 'undefined') {
+    showAuthError('Microsoft sign-in library failed to load — the network may be blocking alcdn.msauth.net. Reload the page or check firewall/ad-blocker.');
+  } else {
+    try {
+      msalInstance = new msal.PublicClientApplication({
+        auth: {
+          clientId:    CONFIG.clientId,
+          authority:   `https://login.microsoftonline.com/${CONFIG.tenantId}`,
+          redirectUri: window.location.href.split('?')[0].split('#')[0],
+        },
+        cache: { cacheLocation: 'sessionStorage' },
+      });
+
+      msalReady = msalInstance.initialize().then(() => {
+        const accounts = msalInstance.getAllAccounts();
+        if (accounts.length > 0) {
+          currentAccount = accounts[0];
+          updateAuthUI();
+          loadLog();
+        }
+      }).catch(e => showAuthError(`Sign-in setup failed: ${e.message || e}`));
+    } catch (e) {
+      showAuthError(`Sign-in setup failed: ${e.message || e}`);
     }
-  });
+  }
 }
 
 async function signIn() {
-  if (!msalInstance) return;
+  if (!msalInstance) {
+    showAuthError('Sign-in is not available — see the error above or reload the page.');
+    return;
+  }
   try {
+    if (msalReady) await msalReady;
     const result = await msalInstance.loginPopup({
       scopes: ['https://graph.microsoft.com/Sites.ReadWrite.All'],
     });
