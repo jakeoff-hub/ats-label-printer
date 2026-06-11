@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ATS Label Printer</title>
+  <script src="https://alcdn.msauth.net/browser/3.7.1/js/msal-browser.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: Arial, sans-serif;
+      background: #f0f0f0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+      min-height: 100vh;
+    }
+
+    /* ── Setup Instructions ── */
+    details.setup {
+      width: 100%;
+      max-width: 960px;
+      background: #fff8e1;
+      border: 1.5px solid #f9a825;
+      border-radius: 8px;
+      padding: 10px 16px;
+      margin-bottom: 14px;
+      font-size: 0.85rem;
+    }
+    details.setup summary { cursor: pointer; font-weight: 700; color: #e65100; user-select: none; }
+    details.setup .setup-body { margin-top: 10px; line-height: 1.8; color: #444; }
+    details.setup ol { padding-left: 20px; }
+    details.setup code {
+      background: #f5f5f5; border: 1px solid #ddd; border-radius: 3px;
+      padding: 1px 5px; font-size: 0.8rem; font-family: monospace;
+    }
+
+    /* ── Auth bar ── */
+    .auth-bar {
+      width: 100%; max-width: 960px; background: #fff;
+      border-radius: 8px; padding: 10px 16px; margin-bottom: 14px;
+      display: flex; align-items: center; justify-content: space-between;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.1); font-size: 0.875rem;
+    }
+    .auth-bar .user-info { color: #333; }
+    .auth-bar .user-info span { font-weight: 700; color: #c0392b; }
+    .btn-auth { padding: 7px 16px; border: none; border-radius: 5px; font-size: 0.85rem; font-weight: 700; cursor: pointer; }
+    .btn-signin  { background: #0078d4; color: #fff; }
+    .btn-signin:hover  { background: #005fa3; }
+    .btn-signout { background: #eee; color: #333; }
+    .btn-signout:hover { background: #ddd; }
+
+    .config-warning {
+      background: #fdecea; border: 1.5px solid #e53935; color: #b71c1c;
+      border-radius: 7px; padding: 10px 16px; margin-bottom: 14px;
+      font-size: 0.85rem; width: 100%; max-width: 960px; display: none;
+    }
+
+    h1 { font-size: 1.3rem; color: #333; margin-bottom: 16px; letter-spacing: 0.04em; }
+
+    .container {
+      display: flex; gap: 32px; align-items: flex-start;
+      flex-wrap: wrap; justify-content: center;
+      width: 100%; max-width: 960px;
+    }
+
+    /* ── Form ── */
+    .form-panel {
+      background: #fff; border-radius: 10px; padding: 22px 20px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.12); width: 290px; flex-shrink: 0;
+    }
+    .form-panel h2 { font-size: 0.85rem; color: #555; margin-bottom: 14px; text-transform: uppercase; letter-spacing: 0.06em; }
+
+    .field { margin-bottom: 11px; }
+    .field label { display: block; font-size: 0.72rem; font-weight: 700; color: #444; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .field input, .field select {
+      width: 100%; padding: 7px 9px; border: 1.5px solid #ccc;
+      border-radius: 5px; font-size: 0.9rem; transition: border-color 0.2s;
+      background: #fff;
+    }
+    .field input:focus, .field select:focus { outline: none; border-color: #c0392b; }
+
+    .field-row { display: flex; gap: 10px; }
+    .field-row .field { flex: 1; }
+
+    .btn-row { display: flex; gap: 8px; margin-top: 12px; }
+    .btn-primary {
+      flex: 1; padding: 10px; background: #c0392b; color: #fff;
+      border: none; border-radius: 6px; font-size: 0.9rem; font-weight: 700;
+      cursor: pointer; transition: background 0.2s;
+    }
+    .btn-primary:hover { background: #a93226; }
+    .btn-primary:disabled { background: #ccc; cursor: not-allowed; }
+    .btn-secondary {
+      padding: 10px 12px; background: #eee; color: #444; border: none;
+      border-radius: 6px; font-size: 0.82rem; font-weight: 700; cursor: pointer;
+    }
+    .btn-secondary:hover { background: #ddd; }
+
+    .log-status { margin-top: 8px; font-size: 0.75rem; min-height: 1em; text-align: center; }
+    .log-status.ok   { color: #2e7d32; }
+    .log-status.err  { color: #c62828; }
+    .log-status.info { color: #0277bd; }
+
+    /* ── Label Preview ── */
+    .preview-panel { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+    .preview-panel h2 { font-size: 0.78rem; color: #888; text-transform: uppercase; letter-spacing: 0.06em; }
+
+    /* 4×3 in at 96dpi = 384×288px */
+    .label {
+      width: 384px; height: 288px; background: #fff;
+      border: 2px dashed #aaa; border-radius: 4px;
+      padding: 10px 13px 8px 13px;
+      display: flex; flex-direction: column;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+
+    /* Header: logo flush right */
+    .label-header {
+      display: flex;
+      justify-content: flex-end;
+      align-items: flex-start;
+      border-bottom: 2px solid #222;
+      padding-bottom: 6px;
+      margin-bottom: 6px;
+    }
+    .logo-svg { width: 148px; }
+
+    /* Field rows */
+    .label-rows { display: flex; flex-direction: column; flex: 1; gap: 0; }
+
+    .lrow {
+      display: flex;
+      align-items: baseline;
+      border-bottom: 1px solid #d0d0d0;
+      padding: 2px 0;
+      min-height: 26px;
+    }
+    .lrow:last-child { border-bottom: none; }
+
+    /* Two-column row */
+    .lrow.split { gap: 0; }
+    .lrow.split .lcol        { flex: 1; display: flex; align-items: baseline; border-right: 1px solid #d0d0d0; padding-right: 6px; margin-right: 6px; }
+    .lrow.split .lcol:last-child { border-right: none; padding-right: 0; margin-right: 0; flex: 0 0 38%; }
+
+    .lkey {
+      font-size: 0.65rem; font-weight: 900; text-transform: uppercase;
+      color: #222; white-space: nowrap; margin-right: 5px; flex-shrink: 0;
+    }
+    .lval {
+      font-size: 0.82rem; font-weight: 700; color: #111;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1;
+    }
+
+    /* Q.C BY row has a signature line */
+    .sig-row { flex-direction: column; border-bottom: none; padding-top: 3px; }
+    .sig-row .lkey { margin-bottom: 3px; }
+    .sig-box { border-bottom: 1.5px solid #555; height: 18px; width: 100%; }
+
+    /* ── Log Table ── */
+    .log-panel {
+      width: 100%; max-width: 960px; margin-top: 24px; background: #fff;
+      border-radius: 10px; padding: 18px 20px; box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+    }
+    .log-panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .log-panel h2 { font-size: 0.85rem; color: #555; text-transform: uppercase; letter-spacing: 0.06em; }
+    .btn-refresh { padding: 5px 12px; font-size: 0.78rem; background: #f0f0f0; border: 1px solid #ccc; border-radius: 5px; cursor: pointer; }
+    .btn-refresh:hover { background: #e0e0e0; }
+
+    .log-table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.82rem; min-width: 700px; }
+    th { text-align: left; padding: 6px 9px; background: #f5f5f5; color: #444; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 2px solid #ddd; }
+    td { padding: 7px 9px; border-bottom: 1px solid #eee; color: #222; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #fafafa; }
+    .log-empty { text-align: center; color: #aaa; padding: 18px; font-size: 0.82rem; }
+
+    /* ── Print ── */
+    @media print {
+      @page { size: 4in 3in; margin: 0; }
+      body, html { margin: 0; padding: 0; background: #fff; }
+
+      .setup, .auth-bar, .config-warning, .form-panel,
+      .preview-panel > h2, h1, .log-panel { display: none !important; }
+
+      .container { display: block; }
+      .preview-panel { display: block; }
+
+      .label {
+        width: 4in; height: 3in; border: none; box-shadow: none;
+        border-radius: 0; padding: 0.1in 0.14in 0.09in 0.14in;
+        page-break-after: always;
+      }
+      .label-header { padding-bottom: 0.06in; margin-bottom: 0.06in; }
+      .logo-svg { width: 1.7in; }
+      .lkey { font-size: 0.085in; }
+      .lval { font-size: 0.11in; }
+      .lrow { min-height: 0.29in; padding: 0.01in 0; }
+      .sig-box { height: 0.2in; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════ CONFIG ═══════════════════════════ -->
+<script>
+  const CONFIG = {
+    clientId:           'PASTE_YOUR_CLIENT_ID_HERE',
+    tenantId:           'PASTE_YOUR_TENANT_ID_HERE',
+    sharepointHost:     'advturbine.sharepoint.com',
+    sharepointSitePath: '/sites/COMPANYSHARE',
+    listName:           'ATS Label Log',
+  };
+</script>
+
+<!-- ── Setup Instructions ── -->
+<details class="setup">
+  <summary>&#9881; First-Time Setup Instructions (click to expand)</summary>
+  <div class="setup-body">
+    <ol>
+      <li><strong>Create the SharePoint List</strong> — go to your SharePoint site &rarr; New &rarr; List &rarr; name it <code>ATS Label Log</code>.<br>
+        Add these columns (all "Single line of text"):
+        <code>WorkOrder</code>, <code>PartNumber</code>, <code>SerialNumber</code>, <code>Customer</code>,
+        <code>Description</code>, <code>Condition</code>, <code>Quantity</code>, <code>QCBy</code>.
+      </li>
+      <li style="margin-top:6px"><strong>Register an Azure AD App</strong> — <a href="https://portal.azure.com" target="_blank">portal.azure.com</a> &rarr; Azure Active Directory &rarr; App registrations &rarr; New registration.<br>
+        Name: <code>ATS Label Printer</code> &bull; Type: <em>Single-page application (SPA)</em> &bull; Redirect URI: the OneDrive/SharePoint URL of this file.
+      </li>
+      <li style="margin-top:6px"><strong>Grant permission</strong> &rarr; API permissions &rarr; Add &rarr; Microsoft Graph &rarr; Delegated &rarr; <code>Sites.ReadWrite.All</code> &rarr; Grant admin consent.</li>
+      <li style="margin-top:6px"><strong>Paste the IDs</strong> from app Overview into the <code>CONFIG</code> block at the top of this file: <code>clientId</code>, <code>tenantId</code>, and your SharePoint site path.</li>
+    </ol>
+  </div>
+</details>
+
+<div class="config-warning" id="configWarning">
+  &#9888; CONFIG not set up — SharePoint logging is disabled. Labels can still be printed without it.
+</div>
+
+<div class="auth-bar" id="authBar">
+  <div class="user-info" id="userInfo">Not signed in to Microsoft</div>
+  <button class="btn-auth btn-signin" id="btnSignIn" onclick="signIn()">Sign in with Microsoft</button>
+</div>
+
+<h1>ATS Label Printer</h1>
+
+<div class="container">
+
+  <!-- ── Form ── -->
+  <div class="form-panel">
+    <h2>Enter Label Info</h2>
+
+    <div class="field-row">
+      <div class="field">
+        <label for="pn">P/N</label>
+        <input id="pn" type="text" placeholder="Part number" oninput="updatePreview()" />
+      </div>
+      <div class="field">
+        <label for="sn">S/N</label>
+        <input id="sn" type="text" placeholder="Serial number" oninput="updatePreview()" />
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="customer">Customer</label>
+      <input id="customer" type="text" placeholder="e.g. AES" oninput="updatePreview()" />
+    </div>
+
+    <div class="field">
+      <label for="description">Description</label>
+      <input id="description" type="text" placeholder="e.g. LPT STG 3 DISK" oninput="updatePreview()" />
+    </div>
+
+    <div class="field-row">
+      <div class="field">
+        <label for="condition">Condition</label>
+        <select id="condition" onchange="updatePreview()">
+          <option value="">— select —</option>
+          <option>OVERHAULED</option>
+          <option>SERVICEABLE</option>
+          <option>AS REMOVED</option>
+          <option>REPAIRABLE</option>
+          <option>NEW</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="qty">QTY</label>
+        <input id="qty" type="text" placeholder="1" oninput="updatePreview()" style="width:100%" />
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="wo">Work Order (WO)</label>
+      <input id="wo" type="text" placeholder="e.g. PP3525" oninput="updatePreview()" />
+    </div>
+
+    <div class="field">
+      <label for="qcby">Q.C By</label>
+      <input id="qcby" type="text" placeholder="Inspector initials / name" oninput="updatePreview()" />
+    </div>
+
+    <div class="btn-row">
+      <button class="btn-primary" id="btnPrintLog" onclick="printAndLog()">Print &amp; Log</button>
+      <button class="btn-secondary" onclick="window.print()">Print Only</button>
+    </div>
+    <div class="log-status" id="logStatus"></div>
+  </div>
+
+  <!-- ── Label Preview ── -->
+  <div class="preview-panel">
+    <h2>Preview (4 &times; 3 in)</h2>
+
+    <div class="label">
+
+      <!-- Logo flush right -->
+      <div class="label-header">
+        <svg class="logo-svg" viewBox="0 0 280 68" xmlns="http://www.w3.org/2000/svg" aria-label="Advanced Turbine Systems LLC">
+          <g transform="translate(2,3)">
+            <circle cx="28" cy="28" r="7" fill="#111"/>
+            <g fill="#c0392b">
+              <ellipse cx="28" cy="10" rx="5" ry="10" transform="rotate(0 28 28)"/>
+              <ellipse cx="28" cy="10" rx="5" ry="10" transform="rotate(45 28 28)"/>
+              <ellipse cx="28" cy="10" rx="5" ry="10" transform="rotate(90 28 28)"/>
+              <ellipse cx="28" cy="10" rx="5" ry="10" transform="rotate(135 28 28)"/>
+              <ellipse cx="28" cy="10" rx="5" ry="10" transform="rotate(180 28 28)"/>
+              <ellipse cx="28" cy="10" rx="5" ry="10" transform="rotate(225 28 28)"/>
+              <ellipse cx="28" cy="10" rx="5" ry="10" transform="rotate(270 28 28)"/>
+              <ellipse cx="28" cy="10" rx="5" ry="10" transform="rotate(315 28 28)"/>
+            </g>
+            <circle cx="28" cy="28" r="6" fill="#111"/>
+            <circle cx="28" cy="28" r="3" fill="#fff"/>
+          </g>
+          <line x1="68" y1="4" x2="68" y2="60" stroke="#444" stroke-width="1.5"/>
+          <text x="76" y="44" font-family="Arial Black,Arial" font-weight="900" font-size="38" fill="#111" letter-spacing="-1">ATS</text>
+          <text x="76" y="55" font-family="Arial,sans-serif" font-size="9" fill="#c0392b" font-weight="700" letter-spacing="0.8">ADVANCED</text>
+          <text x="76" y="65" font-family="Arial,sans-serif" font-size="8" fill="#333" letter-spacing="0.2">TURBINE SYSTEMS, LLC.</text>
+        </svg>
+      </div>
+
+      <!-- Field rows -->
+      <div class="label-rows">
+
+        <div class="lrow">
+          <span class="lkey">P/N:</span>
+          <span class="lval" id="lbl-pn">—</span>
+        </div>
+
+        <div class="lrow">
+          <span class="lkey">S/N:</span>
+          <span class="lval" id="lbl-sn">—</span>
+        </div>
+
+        <div class="lrow split">
+          <div class="lcol">
+            <span class="lkey">CUSTOMER:</span>
+            <span class="lval" id="lbl-customer">—</span>
+          </div>
+          <div class="lcol">
+            <span class="lkey">QTY:</span>
+            <span class="lval" id="lbl-qty">— EA</span>
+          </div>
+        </div>
+
+        <div class="lrow">
+          <span class="lkey">DESCRIPTION:</span>
+          <span class="lval" id="lbl-desc">—</span>
+        </div>
+
+        <div class="lrow split">
+          <div class="lcol">
+            <span class="lkey">CONDITION:</span>
+            <span class="lval" id="lbl-condition">—</span>
+          </div>
+          <div class="lcol">
+            <span class="lkey">WO:</span>
+            <span class="lval" id="lbl-wo">—</span>
+          </div>
+        </div>
+
+        <div class="lrow sig-row">
+          <span class="lkey">Q.C BY:</span>
+          <div class="sig-box"></div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Recent Log ── -->
+<div class="log-panel" id="logPanel" style="display:none">
+  <div class="log-panel-header">
+    <h2>Recent Label Log</h2>
+    <button class="btn-refresh" onclick="loadLog()">&#8635; Refresh</button>
+  </div>
+  <div class="log-table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Date / Time</th>
+          <th>WO</th>
+          <th>P/N</th>
+          <th>S/N</th>
+          <th>Customer</th>
+          <th>Description</th>
+          <th>Condition</th>
+          <th>QTY</th>
+          <th>Q.C By</th>
+        </tr>
+      </thead>
+      <tbody id="logBody">
+        <tr><td colspan="9" class="log-empty">Sign in to view the log</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+// ── CONFIG check ──────────────────────────────────────────────────────────────
+const configured = CONFIG.clientId !== 'PASTE_YOUR_CLIENT_ID_HERE';
+if (!configured) {
+  document.getElementById('configWarning').style.display = 'block';
+  document.getElementById('authBar').style.display = 'none';
+}
+
+// ── MSAL ──────────────────────────────────────────────────────────────────────
+let msalInstance = null;
+let currentAccount = null;
+let siteId = null;
+let listId = null;
+
+if (configured) {
+  msalInstance = new msal.PublicClientApplication({
+    auth: {
+      clientId:    CONFIG.clientId,
+      authority:   `https://login.microsoftonline.com/${CONFIG.tenantId}`,
+      redirectUri: window.location.href.split('?')[0].split('#')[0],
+    },
+    cache: { cacheLocation: 'sessionStorage' },
+  });
+
+  msalInstance.initialize().then(() => {
+    const accounts = msalInstance.getAllAccounts();
+    if (accounts.length > 0) {
+      currentAccount = accounts[0];
+      updateAuthUI();
+      loadLog();
+    }
+  });
+}
+
+async function signIn() {
+  if (!msalInstance) return;
+  try {
+    const result = await msalInstance.loginPopup({
+      scopes: ['https://graph.microsoft.com/Sites.ReadWrite.All'],
+    });
+    currentAccount = result.account;
+    updateAuthUI();
+    loadLog();
+  } catch (e) { console.error('Sign-in error', e); }
+}
+
+function signOut() {
+  if (!msalInstance || !currentAccount) return;
+  msalInstance.logoutPopup({ account: currentAccount }).then(() => {
+    currentAccount = null; siteId = null; listId = null;
+    updateAuthUI();
+    document.getElementById('logBody').innerHTML = '<tr><td colspan="9" class="log-empty">Sign in to view the log</td></tr>';
+    document.getElementById('logPanel').style.display = 'none';
+  });
+}
+
+function updateAuthUI() {
+  if (currentAccount) {
+    document.getElementById('userInfo').innerHTML = `Signed in as <span>${currentAccount.name || currentAccount.username}</span>`;
+    document.getElementById('btnSignIn').textContent = 'Sign Out';
+    document.getElementById('btnSignIn').className = 'btn-auth btn-signout';
+    document.getElementById('btnSignIn').onclick = signOut;
+    document.getElementById('logPanel').style.display = 'block';
+  } else {
+    document.getElementById('userInfo').textContent = 'Not signed in to Microsoft';
+    document.getElementById('btnSignIn').textContent = 'Sign in with Microsoft';
+    document.getElementById('btnSignIn').className = 'btn-auth btn-signin';
+    document.getElementById('btnSignIn').onclick = signIn;
+    document.getElementById('logPanel').style.display = 'none';
+  }
+}
+
+// ── Graph helpers ─────────────────────────────────────────────────────────────
+async function getToken() {
+  const req = { scopes: ['https://graph.microsoft.com/Sites.ReadWrite.All'], account: currentAccount };
+  try { return (await msalInstance.acquireTokenSilent(req)).accessToken; }
+  catch { return (await msalInstance.acquireTokenPopup(req)).accessToken; }
+}
+
+async function graphGet(url) {
+  const resp = await fetch(`https://graph.microsoft.com/v1.0${url}`, {
+    headers: { Authorization: `Bearer ${await getToken()}` },
+  });
+  if (!resp.ok) throw new Error(`${resp.status} ${await resp.text()}`);
+  return resp.json();
+}
+
+async function graphPost(url, body) {
+  const resp = await fetch(`https://graph.microsoft.com/v1.0${url}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${await getToken()}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) throw new Error(`${resp.status} ${await resp.text()}`);
+  return resp.json();
+}
+
+async function ensureSiteAndList() {
+  if (siteId && listId) return;
+  const siteQuery = CONFIG.sharepointSitePath
+    ? `${CONFIG.sharepointHost}:${CONFIG.sharepointSitePath}`
+    : CONFIG.sharepointHost;
+  siteId = (await graphGet(`/sites/${siteQuery}`)).id;
+  const lists = await graphGet(`/sites/${siteId}/lists?$filter=displayName eq '${encodeURIComponent(CONFIG.listName)}'`);
+  if (!lists.value?.length) throw new Error(`List "${CONFIG.listName}" not found — check Setup Instructions.`);
+  listId = lists.value[0].id;
+}
+
+// ── Log to SharePoint ─────────────────────────────────────────────────────────
+async function logLabel(fields) {
+  await ensureSiteAndList();
+  await graphPost(`/sites/${siteId}/lists/${listId}/items`, { fields });
+}
+
+// ── Load log ──────────────────────────────────────────────────────────────────
+async function loadLog() {
+  if (!currentAccount) return;
+  const tbody = document.getElementById('logBody');
+  tbody.innerHTML = '<tr><td colspan="9" class="log-empty">Loading&hellip;</td></tr>';
+  try {
+    await ensureSiteAndList();
+    const data = await graphGet(
+      `/sites/${siteId}/lists/${listId}/items?$expand=fields&$orderby=fields/Created desc&$top=30`
+    );
+    if (!data.value?.length) {
+      tbody.innerHTML = '<tr><td colspan="9" class="log-empty">No labels logged yet.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.value.map(({ fields: f }) => `<tr>
+      <td>${f.Created ? new Date(f.Created).toLocaleString() : ''}</td>
+      <td>${esc(f.WorkOrder || f.Title || '')}</td>
+      <td>${esc(f.PartNumber || '')}</td>
+      <td>${esc(f.SerialNumber || '')}</td>
+      <td>${esc(f.Customer || '')}</td>
+      <td>${esc(f.Description || '')}</td>
+      <td>${esc(f.Condition || '')}</td>
+      <td>${esc(f.Quantity || '')}</td>
+      <td>${esc(f.QCBy || '')}</td>
+    </tr>`).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="9" class="log-empty" style="color:#c62828">${esc(e.message)}</td></tr>`;
+  }
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Print & Log ───────────────────────────────────────────────────────────────
+async function printAndLog() {
+  const wo          = document.getElementById('wo').value.trim();
+  const pn          = document.getElementById('pn').value.trim();
+  const sn          = document.getElementById('sn').value.trim();
+  const customer    = document.getElementById('customer').value.trim();
+  const description = document.getElementById('description').value.trim();
+  const condition   = document.getElementById('condition').value.trim();
+  const qty         = document.getElementById('qty').value.trim();
+  const qcby        = document.getElementById('qcby').value.trim();
+
+  window.print();
+
+  const status = document.getElementById('logStatus');
+  if (!configured || !currentAccount) {
+    if (configured && !currentAccount) {
+      status.textContent = 'Printed — sign in to log to SharePoint';
+      status.className = 'log-status info';
+    }
+    return;
+  }
+
+  status.textContent = 'Logging to SharePoint…';
+  status.className = 'log-status info';
+  document.getElementById('btnPrintLog').disabled = true;
+
+  try {
+    await logLabel({
+      Title:        wo,
+      WorkOrder:    wo,
+      PartNumber:   pn,
+      SerialNumber: sn,
+      Customer:     customer,
+      Description:  description,
+      Condition:    condition,
+      Quantity:     qty,
+      QCBy:         qcby,
+    });
+    status.textContent = '✓ Logged to SharePoint';
+    status.className = 'log-status ok';
+    loadLog();
+  } catch (e) {
+    status.textContent = `Log failed: ${e.message}`;
+    status.className = 'log-status err';
+  } finally {
+    document.getElementById('btnPrintLog').disabled = false;
+  }
+}
+
+// ── Live preview ──────────────────────────────────────────────────────────────
+function updatePreview() {
+  const v = id => document.getElementById(id).value.trim() || '—';
+  document.getElementById('lbl-pn').textContent        = v('pn');
+  document.getElementById('lbl-sn').textContent        = v('sn');
+  document.getElementById('lbl-customer').textContent  = v('customer');
+  document.getElementById('lbl-qty').textContent       = (document.getElementById('qty').value.trim() || '—') + ' EA';
+  document.getElementById('lbl-desc').textContent      = v('description');
+  document.getElementById('lbl-condition').textContent = v('condition');
+  document.getElementById('lbl-wo').textContent        = v('wo');
+}
+</script>
+
+</body>
+</html>
